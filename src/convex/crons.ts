@@ -7,6 +7,6 @@ const crons = cronJobs();
 // (see bot.ts scheduleNextTick), and this cron guarantees the chain is
 // revived within a minute even after a deployment restart — no dashboard tab
 // required.
-crons.interval("botTick", { minutes: 1 }, api.bot.tick);
+crons.interval("botTick", { minutes: 5 }, api.bot.tick);
 
 export default crons;
