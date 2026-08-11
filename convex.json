@@ -3,5 +3,12 @@
   "functions": "src/convex/",
   "aiFiles": {
     "enabled": false
+  },
+  "cron": {
+    "botTick": {
+      "handler": "bot:tick",
+      "schedule": { "type": "interval", "minutes": 5 },
+      "args": {}
+    }
   }
 }
