@@ -75,19 +75,6 @@ const schema = defineSchema(
           reasons: v.array(v.string()),
         }),
       ),
-      // cached news validation (anti-lose gate) for this market
-      news: v.optional(
-        v.object({
-          ts: v.number(),
-          verdict: v.union(
-            v.literal("YES"),
-            v.literal("NO"),
-            v.literal("UNCLEAR"),
-          ),
-          summary: v.string(),
-          headlines: v.array(v.string()),
-        }),
-      ),
     }).index("by_gamma_id", ["gammaId"]),
 
     // one paper-trading account per user

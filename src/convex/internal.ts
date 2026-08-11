@@ -8,17 +8,6 @@ import { api } from "./_generated/api";
 
 const bookLevel = v.object({ price: v.number(), size: v.number() });
 
-export const newsValidator = v.object({
-  ts: v.number(),
-  verdict: v.union(
-    v.literal("YES"),
-    v.literal("NO"),
-    v.literal("UNCLEAR"),
-  ),
-  summary: v.string(),
-  headlines: v.array(v.string()),
-});
-
 export const bookValidator = v.object({
   ts: v.number(),
   bids: v.array(bookLevel),
@@ -209,19 +198,6 @@ export const applyBookAndSignal = mutation({
       prevMid,
       updatedAt,
     });
-    return existing._id;
-  },
-});
-
-export const applyMarketNews = mutation({
-  args: { gammaId: v.string(), news: newsValidator },
-  handler: async (ctx, { gammaId, news }) => {
-    const existing = await ctx.db
-      .query("markets")
-      .withIndex("by_gamma_id", (q) => q.eq("gammaId", gammaId))
-      .first();
-    if (!existing) return null;
-    await ctx.db.patch(existing._id, { news });
     return existing._id;
   },
 });
