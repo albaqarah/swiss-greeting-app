@@ -28,7 +28,7 @@ const TAKE_PROFIT_MULT = 5.0; // sell when the position is worth 5× the entry
 const NEAR_CERTAIN_PRICE = 0.95; // ...or when it's basically resolved — lock it
 const STOP_LOSS_MULT = 0.75;
 const MAX_ENTRY_PRICE = 0.20; // entry only where a 5× target is reachable
-const SIGNAL_MAX_AGE_MS = 25 * 60 * 1000;
+const SIGNAL_MAX_AGE_MS = 10 * 60 * 1000;
 const BOOK_SCOPE = 24; // fetch order books for the top N markets (parallel)
 
 // ---------------------------------------------------------------------------
@@ -156,129 +156,178 @@ export async function runUserTick(
   ctx: ActionCtx,
   userId: Id<"users">,
 ): Promise<void> {
+  // One tick per user at a time: the cron, the "Run genius now" button and the
+  // dashboard watchdog can all fire at the same moment. The lock keeps them
+  // from double-exiting or double-entering the same account.
+  const claim = await ctx.runMutation(api.internal.claimTick, { userId });
+  if (!claim.claimed) return;
+  try {
+    await runUserTickLocked(ctx, userId);
+  } finally {
+    await ctx.runMutation(api.internal.releaseTick, { userId });
+  }
+}
+
+async function runUserTickLocked(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+): Promise<void> {
   const config = await ctx.runQuery(api.internal.botConfigByUser, { userId });
   if (!config || !config.enabled) return;
 
   const openPositions = await ctx.runQuery(api.internal.openPositionsByUser, {
     userId,
   });
-  const markets = await ctx.runQuery(api.internal.allMarkets);
-  const marketById = new Map(markets.map((m) => [m._id, m]));
+  let markets = await ctx.runQuery(api.internal.allMarkets);
+  let marketById = new Map(markets.map((m) => [m._id, m]));
+
+  // Refresh the live order book for every held market first. Exits must always
+  // see current prices — even for markets that just resolved or dropped out of
+  // the top-N refresh scope, otherwise a position sitting at 5×+ can stay open
+  // forever on stale cached data.
+  const heldMarkets = openPositions
+    .map((p) => marketById.get(p.marketId))
+    .filter(
+      (m): m is NonNullable<typeof m> =>
+        m !== undefined && m.clobTokenIds[0] !== undefined,
+    );
+  await Promise.allSettled(
+    heldMarkets.map(async (market) => {
+      const tokenId = market.clobTokenIds[0];
+      if (!tokenId) return;
+      const book = await fetchOrderBook(tokenId);
+      if (!book) return;
+      await ctx.runMutation(api.internal.applyBookOnly, {
+        gammaId: market.gammaId,
+        book,
+        updatedAt: Date.now(),
+      });
+    }),
+  );
+
+  // Re-read markets so exits evaluate against the fresh books.
+  markets = await ctx.runQuery(api.internal.allMarkets);
+  marketById = new Map(markets.map((m) => [m._id, m]));
 
   const now = Date.now();
   let cash = config.cash;
 
   // 1) Exits: settlement, take-profit, stop-loss.
   for (const position of openPositions) {
-    const market = marketById.get(position.marketId);
-    if (!market) continue;
+    try {
+      const market = marketById.get(position.marketId);
+      if (!market) continue;
 
-    const yesMid = marketMid(market);
-    const value = position.side === "YES" ? yesMid : 1 - yesMid;
+      const yesMid = marketMid(market);
+      const value = position.side === "YES" ? yesMid : 1 - yesMid;
 
-    if (market.closed) {
-      const finalPrice =
-        position.side === "YES"
-          ? market.outcomePrices[0]
-          : market.outcomePrices[1];
-      const price = clampPrice(finalPrice ?? value);
-      const proceeds = position.shares * price;
-      const pnl = proceeds - position.invested;
-      cash += proceeds;
-      await ctx.runMutation(api.internal.closePosition, {
-        positionId: position._id,
-        status: "SETTLED",
-        realizedPnl: pnl,
-        closedAt: now,
-        reason: "market resolved",
-      });
-      await insertTrade(ctx, {
-        userId,
-        marketId: market._id,
-        side: position.side,
-        action: "SETTLE",
-        shares: position.shares,
-        price,
-        usd: proceeds,
-        pnl,
-        reason: "market resolved",
-      });
-      await insertLog(
-        ctx,
-        userId,
-        "GENIUS",
-        settleLine(position.side, price, pnl),
-        market._id,
-      );
-      continue;
-    }
+      if (market.closed) {
+        const finalPrice =
+          position.side === "YES"
+            ? market.outcomePrices[0]
+            : market.outcomePrices[1];
+        const price = clampPrice(finalPrice ?? value);
+        const proceeds = position.shares * price;
+        const pnl = proceeds - position.invested;
+        cash += proceeds;
+        await ctx.runMutation(api.internal.closePosition, {
+          positionId: position._id,
+          status: "SETTLED",
+          realizedPnl: pnl,
+          closedAt: now,
+          reason: "market resolved",
+        });
+        await insertTrade(ctx, {
+          userId,
+          marketId: market._id,
+          side: position.side,
+          action: "SETTLE",
+          shares: position.shares,
+          price,
+          usd: proceeds,
+          pnl,
+          reason: "market resolved",
+        });
+        await insertLog(
+          ctx,
+          userId,
+          "GENIUS",
+          settleLine(position.side, price, pnl),
+          market._id,
+        );
+        continue;
+      }
 
-    if (position.avgPrice <= 0) continue;
-    const pnlPct = (value - position.avgPrice) / position.avgPrice;
+      if (position.avgPrice <= 0) continue;
+      const pnlPct = (value - position.avgPrice) / position.avgPrice;
 
-    const takeProfitHit = value >= position.avgPrice * TAKE_PROFIT_MULT;
-    const nearCertainHit = value >= NEAR_CERTAIN_PRICE;
-    if (takeProfitHit || nearCertainHit) {
-      const reason = takeProfitHit ? "take-profit" : "near-certain";
-      const proceeds = position.shares * value;
-      const pnl = proceeds - position.invested;
-      cash += proceeds;
-      await ctx.runMutation(api.internal.closePosition, {
-        positionId: position._id,
-        status: "CLOSED",
-        realizedPnl: pnl,
-        closedAt: now,
-        reason,
-      });
-      await insertTrade(ctx, {
-        userId,
-        marketId: market._id,
-        side: position.side,
-        action: "SELL",
-        shares: position.shares,
-        price: value,
-        usd: proceeds,
-        pnl,
-        reason,
-      });
-      await insertLog(
-        ctx,
-        userId,
-        "GENIUS",
-        takeProfitHit
-          ? takeProfitLine(position.side, value, pnlPct * 100)
-          : nearCertainLine(position.side, value, pnlPct * 100),
-        market._id,
-      );
-    } else if (value <= position.avgPrice * STOP_LOSS_MULT) {
-      const proceeds = position.shares * value;
-      const pnl = proceeds - position.invested;
-      cash += proceeds;
-      await ctx.runMutation(api.internal.closePosition, {
-        positionId: position._id,
-        status: "CLOSED",
-        realizedPnl: pnl,
-        closedAt: now,
-        reason: "stop-loss",
-      });
-      await insertTrade(ctx, {
-        userId,
-        marketId: market._id,
-        side: position.side,
-        action: "SELL",
-        shares: position.shares,
-        price: value,
-        usd: proceeds,
-        pnl,
-        reason: "stop-loss",
-      });
-      await insertLog(
-        ctx,
-        userId,
-        "GENIUS",
-        stopLossLine(position.side, value, pnlPct * 100),
-        market._id,
-      );
+      const takeProfitHit = value >= position.avgPrice * TAKE_PROFIT_MULT;
+      const nearCertainHit = value >= NEAR_CERTAIN_PRICE;
+      if (takeProfitHit || nearCertainHit) {
+        const reason = takeProfitHit ? "take-profit" : "near-certain";
+        const proceeds = position.shares * value;
+        const pnl = proceeds - position.invested;
+        cash += proceeds;
+        await ctx.runMutation(api.internal.closePosition, {
+          positionId: position._id,
+          status: "CLOSED",
+          realizedPnl: pnl,
+          closedAt: now,
+          reason,
+        });
+        await insertTrade(ctx, {
+          userId,
+          marketId: market._id,
+          side: position.side,
+          action: "SELL",
+          shares: position.shares,
+          price: value,
+          usd: proceeds,
+          pnl,
+          reason,
+        });
+        await insertLog(
+          ctx,
+          userId,
+          "GENIUS",
+          takeProfitHit
+            ? takeProfitLine(position.side, value, pnlPct * 100)
+            : nearCertainLine(position.side, value, pnlPct * 100),
+          market._id,
+        );
+      } else if (value <= position.avgPrice * STOP_LOSS_MULT) {
+        const proceeds = position.shares * value;
+        const pnl = proceeds - position.invested;
+        cash += proceeds;
+        await ctx.runMutation(api.internal.closePosition, {
+          positionId: position._id,
+          status: "CLOSED",
+          realizedPnl: pnl,
+          closedAt: now,
+          reason: "stop-loss",
+        });
+        await insertTrade(ctx, {
+          userId,
+          marketId: market._id,
+          side: position.side,
+          action: "SELL",
+          shares: position.shares,
+          price: value,
+          usd: proceeds,
+          pnl,
+          reason: "stop-loss",
+        });
+        await insertLog(
+          ctx,
+          userId,
+          "GENIUS",
+          stopLossLine(position.side, value, pnlPct * 100),
+          market._id,
+        );
+      }
+    } catch (error) {
+      // One bad position must never block the rest of the exits.
+      console.error("exit failed for position", position._id, error);
     }
   }
 
@@ -369,14 +418,23 @@ export async function runUserTick(
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Mid of the YES token. Works with a two-sided book, a one-sided book (the
+// visible side is the best estimate of where it trades), or falls back to the
+// last Gamma outcome price. One-sided books are exactly what you get when a
+// market is basically resolved — the exit logic must still see ~100¢.
 function marketMid(market: {
   book?: { bids: { price: number }[]; asks: { price: number }[] } | null;
   outcomePrices: number[];
 }): number {
-  if (market.book && market.book.bids.length > 0 && market.book.asks.length > 0) {
-    const bestBid = market.book.bids[0].price;
-    const bestAsk = market.book.asks[0].price;
-    if (bestAsk > bestBid) return (bestBid + bestAsk) / 2;
+  const book = market.book;
+  if (book && (book.bids.length > 0 || book.asks.length > 0)) {
+    const bestBid = book.bids[0]?.price;
+    const bestAsk = book.asks[0]?.price;
+    if (bestBid !== undefined && bestAsk !== undefined) {
+      return (bestBid + bestAsk) / 2;
+    }
+    if (bestAsk !== undefined) return bestAsk;
+    if (bestBid !== undefined) return bestBid;
   }
   return market.outcomePrices[0] ?? 0.5;
 }

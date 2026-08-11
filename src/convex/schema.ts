@@ -85,6 +85,8 @@ const schema = defineSchema(
       enabled: v.boolean(),
       aggression: v.number(), // 0..1 fraction of cash risked per trade
       lastTickAt: v.optional(v.number()),
+      // per-user tick lock: 0 = free, timestamp = a tick is in progress
+      tickRunningAt: v.optional(v.number()),
       createdAt: v.number(),
       updatedAt: v.number(),
     }).index("by_user", ["userId"]),

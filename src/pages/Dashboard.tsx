@@ -80,6 +80,19 @@ export default function Dashboard() {
     }
   }, [markets, refreshMarkets]);
 
+  // Watchdog: while the control room is open and the bot is armed, keep
+  // ticking every minute so take-profits/stop-losses fire even if the
+  // platform cron hiccups. The per-user tick lock in the engine prevents
+  // double runs against the cron / manual button.
+  useEffect(() => {
+    if (!status?.config.enabled) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      runTick().catch((error) => console.error("watchdog tick failed", error));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [status?.config.enabled, runTick]);
+
   // Preselect the most liquid market once data arrives.
   useEffect(() => {
     if (!selectedId && markets && markets.length > 0) {

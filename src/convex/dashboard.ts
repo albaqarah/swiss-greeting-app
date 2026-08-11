@@ -9,10 +9,17 @@ function marketMid(market: {
   book?: { bids: { price: number }[]; asks: { price: number }[] } | null;
   outcomePrices: number[];
 }): number {
-  if (market.book && market.book.bids.length > 0 && market.book.asks.length > 0) {
-    const bestBid = market.book.bids[0].price;
-    const bestAsk = market.book.asks[0].price;
-    if (bestAsk > bestBid) return (bestBid + bestAsk) / 2;
+  // Tolerate one-sided books (typical for a market that is basically
+  // resolved): the visible side is the best estimate of where it trades.
+  const book = market.book;
+  if (book && (book.bids.length > 0 || book.asks.length > 0)) {
+    const bestBid = book.bids[0]?.price;
+    const bestAsk = book.asks[0]?.price;
+    if (bestBid !== undefined && bestAsk !== undefined) {
+      return (bestBid + bestAsk) / 2;
+    }
+    if (bestAsk !== undefined) return bestAsk;
+    if (bestBid !== undefined) return bestBid;
   }
   return market.outcomePrices[0] ?? 0.5;
 }

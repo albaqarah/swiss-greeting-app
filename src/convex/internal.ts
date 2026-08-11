@@ -128,6 +128,55 @@ export const upsertMarket = mutation({
   },
 });
 
+// How long a claimed tick may hold the lock before it's considered stale
+// (e.g. the action crashed mid-run) and another tick may take over.
+export const TICK_LOCK_MS = 10 * 60 * 1000;
+
+export const applyBookOnly = mutation({
+  args: { gammaId: v.string(), book: bookValidator, updatedAt: v.number() },
+  handler: async (ctx, { gammaId, book, updatedAt }) => {
+    const existing = await ctx.db
+      .query("markets")
+      .withIndex("by_gamma_id", (q) => q.eq("gammaId", gammaId))
+      .first();
+    if (!existing) return null;
+    await ctx.db.patch(existing._id, { book, updatedAt });
+    return existing._id;
+  },
+});
+
+export const claimTick = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const config = await ctx.db
+      .query("botConfigs")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+    if (!config || !config.enabled) {
+      return { claimed: false, reason: "bot disabled" };
+    }
+    const now = Date.now();
+    if (config.tickRunningAt && now - config.tickRunningAt < TICK_LOCK_MS) {
+      return { claimed: false, reason: "tick in progress" };
+    }
+    await ctx.db.patch(config._id, { tickRunningAt: now });
+    return { claimed: true, reason: null };
+  },
+});
+
+export const releaseTick = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const config = await ctx.db
+      .query("botConfigs")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+    if (!config) return null;
+    await ctx.db.patch(config._id, { tickRunningAt: 0 });
+    return config._id;
+  },
+});
+
 export const applyBookAndSignal = mutation({
   args: {
     gammaId: v.string(),
