@@ -77,7 +77,7 @@ export function BotControls({
           aria-label="Aggression"
         />
         <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-black/40">
-          % of cash risked per trade · 15% TP / 25% SL · max 5 positions
+          % of cash risked per trade · 5× TP / 25% SL · entry ≤ 20¢ · max 5 positions
         </p>
       </div>
 

@@ -15,6 +15,7 @@ import {
   cents,
   buyLine,
   takeProfitLine,
+  nearCertainLine,
   stopLossLine,
   settleLine,
   truncate,
@@ -23,10 +24,12 @@ import {
 
 export const MAX_OPEN_POSITIONS = 5;
 const MIN_SHARES = 5;
-const TAKE_PROFIT_MULT = 1.15;
+const TAKE_PROFIT_MULT = 5.0; // sell when the position is worth 5× the entry
+const NEAR_CERTAIN_PRICE = 0.95; // ...or when it's basically resolved — lock it
 const STOP_LOSS_MULT = 0.75;
+const MAX_ENTRY_PRICE = 0.20; // entry only where a 5× target is reachable
 const SIGNAL_MAX_AGE_MS = 25 * 60 * 1000;
-const BOOK_SCOPE = 12; // fetch order books for the top N markets by 24h volume
+const BOOK_SCOPE = 24; // fetch order books for the top N markets (parallel)
 
 // ---------------------------------------------------------------------------
 // Market data refresh
@@ -36,10 +39,13 @@ export async function refreshMarketsData(ctx: ActionCtx): Promise<{
   fetched: number;
   books: number;
 }> {
-  const [activeMarkets, closedMarkets] = await Promise.all([
-    fetchGammaMarkets(30),
-    fetchClosedGammaMarkets(100),
-  ]);
+  // Only fetch resolved-market data when someone actually holds a position —
+  // keeps the fast loop lean.
+  const hasOpenPositions = await ctx.runQuery(api.internal.hasOpenPositions);
+  const closedMarkets = hasOpenPositions
+    ? await fetchClosedGammaMarkets(100)
+    : [];
+  const [activeMarkets] = await Promise.all([fetchGammaMarkets(30)]);
 
   let fetched = 0;
   for (const market of activeMarkets) {
@@ -94,43 +100,50 @@ async function refreshBooksAndSignals(
     .sort((a, b) => b.volume24hr - a.volume24hr)
     .slice(0, BOOK_SCOPE);
 
+  // Fetch every order book in parallel — speed is the whole point.
+  const results = await Promise.allSettled(
+    scoped.map(async (market) => {
+      const tokenId = market.clobTokenIds[0];
+      const book = await fetchOrderBook(tokenId);
+      if (!book) return 0;
+
+      const existing = await ctx.runQuery(api.internal.marketByGammaId, {
+        gammaId: market.gammaId,
+      });
+      if (!existing) return 0;
+
+      const signal = computeSignal({
+        book,
+        prevMid: existing.prevMid,
+        volume24hr: existing.volume24hr,
+        liquidity: existing.liquidity,
+      });
+
+      await ctx.runMutation(api.internal.applyBookAndSignal, {
+        gammaId: market.gammaId,
+        book: {
+          ts: book.ts,
+          bids: book.bids,
+          asks: book.asks,
+        },
+        signal: {
+          ts: signal.ts,
+          mid: signal.mid,
+          score: signal.score,
+          direction: signal.direction,
+          confidence: signal.confidence,
+          reasons: signal.reasons,
+        },
+        prevMid: signal.mid,
+        updatedAt: Date.now(),
+      });
+      return 1;
+    }),
+  );
+
   let books = 0;
-  for (const market of scoped) {
-    const tokenId = market.clobTokenIds[0];
-    const book = await fetchOrderBook(tokenId);
-    if (!book) continue;
-    books += 1;
-
-    const existing = await ctx.runQuery(api.internal.marketByGammaId, {
-      gammaId: market.gammaId,
-    });
-    if (!existing) continue;
-
-    const signal = computeSignal({
-      book,
-      prevMid: existing.prevMid,
-      volume24hr: existing.volume24hr,
-      liquidity: existing.liquidity,
-    });
-
-    await ctx.runMutation(api.internal.applyBookAndSignal, {
-      gammaId: market.gammaId,
-      book: {
-        ts: book.ts,
-        bids: book.bids,
-        asks: book.asks,
-      },
-      signal: {
-        ts: signal.ts,
-        mid: signal.mid,
-        score: signal.score,
-        direction: signal.direction,
-        confidence: signal.confidence,
-        reasons: signal.reasons,
-      },
-      prevMid: signal.mid,
-      updatedAt: Date.now(),
-    });
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value === 1) books += 1;
   }
   return books;
 }
@@ -203,7 +216,10 @@ export async function runUserTick(
     if (position.avgPrice <= 0) continue;
     const pnlPct = (value - position.avgPrice) / position.avgPrice;
 
-    if (value >= position.avgPrice * TAKE_PROFIT_MULT) {
+    const takeProfitHit = value >= position.avgPrice * TAKE_PROFIT_MULT;
+    const nearCertainHit = value >= NEAR_CERTAIN_PRICE;
+    if (takeProfitHit || nearCertainHit) {
+      const reason = takeProfitHit ? "take-profit" : "near-certain";
       const proceeds = position.shares * value;
       const pnl = proceeds - position.invested;
       cash += proceeds;
@@ -212,7 +228,7 @@ export async function runUserTick(
         status: "CLOSED",
         realizedPnl: pnl,
         closedAt: now,
-        reason: "take-profit",
+        reason,
       });
       await insertTrade(ctx, {
         userId,
@@ -223,13 +239,15 @@ export async function runUserTick(
         price: value,
         usd: proceeds,
         pnl,
-        reason: "take-profit",
+        reason,
       });
       await insertLog(
         ctx,
         userId,
         "GENIUS",
-        takeProfitLine(position.side, value, pnlPct * 100),
+        takeProfitHit
+          ? takeProfitLine(position.side, value, pnlPct * 100)
+          : nearCertainLine(position.side, value, pnlPct * 100),
         market._id,
       );
     } else if (value <= position.avgPrice * STOP_LOSS_MULT) {
@@ -286,7 +304,8 @@ export async function runUserTick(
       const signal = market.signal!;
       const side = signal.direction as "YES" | "NO";
       const price = clampPrice(side === "YES" ? signal.mid : 1 - signal.mid);
-      if (price <= 0.02 || price >= 0.98) continue;
+      // Only enter where a 5× target is geometrically reachable.
+      if (price <= 0.02 || price > MAX_ENTRY_PRICE) continue;
 
       const budget = cash * config.aggression * signal.confidence;
       let shares = budget / price;
@@ -321,7 +340,7 @@ export async function runUserTick(
         shares,
         price,
         usd: cost,
-        reason: signal.reasons[0] ?? "genius signal",
+        reason: `5× TP entry @ ${cents(price)} — ${signal.reasons[0] ?? "early signal"}`,
       });
       await insertLog(ctx, userId, "GENIUS", buyLine(side, shares, price), market._id);
       entries += 1;

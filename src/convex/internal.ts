@@ -69,6 +69,17 @@ export const openPositionsByUser = query({
       .collect(),
 });
 
+export const hasOpenPositions = query({
+  args: {},
+  handler: async (ctx) => {
+    const open = await ctx.db
+      .query("positions")
+      .filter((q) => q.eq(q.field("status"), "OPEN"))
+      .first();
+    return open !== null;
+  },
+});
+
 export const priceHistoryByMarket = query({
   args: { marketId: v.id("markets") },
   handler: async (ctx, { marketId }) =>

@@ -285,7 +285,7 @@ export default function Dashboard() {
               <div className="lg:col-span-8">
                 <SectionShell
                   no="01"
-                  title="Live markets"
+                  title="Live markets · ≤ 24h"
                   right={
                     <span className="text-[10px] uppercase tracking-[0.2em] text-black/40">
                       {markets?.length ?? 0} tracked

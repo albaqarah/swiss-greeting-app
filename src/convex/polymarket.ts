@@ -99,18 +99,36 @@ const toNum = (value: unknown): number => {
 // Gamma API
 // ---------------------------------------------------------------------------
 
+// The bot only plays markets that resolve fast: between 1h and 24h from now.
+// Short enough for quick turns, long enough to actually catch a 5× move.
+export const MIN_DURATION_MS = 60 * 60 * 1000;
+export const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
+
+export function isShortHorizon(market: ParsedMarket): boolean {
+  if (!market.endDate) return false;
+  const remaining = market.endDate - Date.now();
+  return remaining >= MIN_DURATION_MS && remaining <= MAX_DURATION_MS;
+}
+
 export async function fetchGammaMarkets(
   limit = 30,
 ): Promise<ParsedMarket[]> {
   try {
-    const url = `${GAMMA_URL}/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=${limit}`;
+    const now = new Date();
+    const min = now.toISOString();
+    const max = new Date(now.getTime() + MAX_DURATION_MS).toISOString();
+    const url =
+      `${GAMMA_URL}/markets?active=true&closed=false` +
+      `&order=volume24hr&ascending=false&limit=${limit}` +
+      `&end_date_min=${encodeURIComponent(min)}` +
+      `&end_date_max=${encodeURIComponent(max)}`;
     const res = await fetch(url, { headers: { accept: "application/json" } });
     if (!res.ok) return [];
     const raw = (await res.json()) as RawGammaMarket[];
     if (!Array.isArray(raw)) return [];
     return raw
       .map(parseGammaMarket)
-      .filter((m) => m !== null) as ParsedMarket[];
+      .filter((m) => m !== null && isShortHorizon(m)) as ParsedMarket[];
   } catch {
     return [];
   }
@@ -264,7 +282,20 @@ export function computeSignal(input: SignalInput): Signal {
   const momentum = prevMid && prevMid > 0 ? (mid - prevMid) / prevMid : 0;
   const momentumSignal = clamp(momentum / 0.06, -1, 1);
 
-  const score = 0.6 * imbalance + 0.4 * momentumSignal;
+  let score = 0.6 * imbalance + 0.4 * momentumSignal;
+
+  // Early-entry bonus: price is still cheap and momentum just started moving.
+  // Get in before the crowd does — that's where the 5× trades live.
+  const earlyYes = mid < 0.3 && momentum > 0.005;
+  const earlyNo = mid > 0.7 && momentum < -0.005;
+  if (earlyYes || earlyNo) {
+    score += (earlyYes ? 1 : -1) * 0.08;
+    reasons.push(
+      earlyYes
+        ? `Early entry: YES ${cents(mid)} with momentum building — ahead of the crowd.`
+        : `Early entry: NO ${cents(1 - mid)} with momentum building — ahead of the crowd.`,
+    );
+  }
 
   const spreadPenalty = clamp((spread - 0.02) / 0.08, 0, 1);
   let confidence =
@@ -345,6 +376,14 @@ export function takeProfitLine(side: Direction, price: number, pnlPct: number): 
 
 export function stopLossLine(side: Direction, price: number, pnlPct: number): string {
   return `Discipline: cut ${side} @ ${cents(price)} (${pnlPct.toFixed(1)}%). Genius knows when to fold.`;
+}
+
+export function nearCertainLine(
+  side: Direction,
+  price: number,
+  pnlPct: number,
+): string {
+  return `Near certainty: ${side} out @ ${cents(price)} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%). Locking it before the crowd does.`;
 }
 
 export function settleLine(side: Direction, price: number, pnl: number): string {

@@ -75,6 +75,14 @@ export function fmtTime(ts: number): string {
   });
 }
 
+export function fmtRemaining(ts: number): string {
+  const minutes = Math.max(0, Math.floor((ts - Date.now()) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
 export function fmtAge(ts: number): string {
   const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (seconds < 60) return `${seconds}s ago`;

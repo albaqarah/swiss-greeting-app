@@ -8,19 +8,19 @@ const SPEC_ROWS = [
     no: "01",
     label: "Telemetry",
     title: "Reads the order book",
-    value: "Bid/ask depth imbalance, spread quality and live liquidity — scanned every 5 minutes, all day.",
+    value: "Bid/ask depth imbalance, spread quality and live liquidity — scanned every minute, focused on markets that resolve within 24 hours.",
   },
   {
     no: "02",
     label: "Momentum",
-    title: "Feels the crowd",
-    value: "Tracks price drift between scans and trades with the current, never against it. No FOMO, no revenge trades.",
+    title: "Enters early",
+    value: "Hunts cheap prices with fresh momentum — gets in before the crowd, at 20¢ or less, where a 5× move is actually reachable.",
   },
   {
     no: "03",
     label: "Discipline",
     title: "Rules are rules",
-    value: "15% take-profit, 25% stop-loss, max 5 open positions. Genius is knowing when to fold.",
+    value: "5× take-profit, 25% stop-loss, near-certainty lock at 95¢, max 5 open positions. Genius is knowing when to fold.",
   },
   {
     no: "04",
@@ -54,11 +54,11 @@ const STEPS = [
 ] as const;
 
 const TICKER = [
-  "BOOK TELEMETRY",
-  "MOMENTUM SCAN",
-  "RISK DISCIPLINE",
+  "≤ 24H MARKETS",
+  "EARLY ENTRY",
+  "5× TAKE-PROFIT",
+  "1-MIN SCAN",
   "GENIUS JOURNAL",
-  "PAPER TRADING",
 ] as const;
 
 export default function Landing() {

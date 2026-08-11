@@ -8,6 +8,7 @@ import {
   fmtCents,
   fmtCompact,
   fmtPct,
+  fmtRemaining,
 } from "./shared";
 
 export function MarketsTable({
@@ -88,9 +89,9 @@ export function MarketsTable({
                       </p>
                       <p className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-black/40">
                         {market.closed
-                          ? "Closed"
+                          ? "Resolved"
                           : market.endDate
-                            ? `Ends ${new Date(market.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                            ? `Resolves in ${fmtRemaining(market.endDate)}`
                             : "Open"}{" "}
                         · {fmtAge(market.updatedAt)}
                       </p>
