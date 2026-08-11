@@ -99,8 +99,10 @@ const toNum = (value: unknown): number => {
 // Gamma API
 // ---------------------------------------------------------------------------
 
-// The bot only plays markets that resolve fast: between 1h and 24h from now.
-// Short enough for quick turns, long enough to actually catch a 5× move.
+// The bot only plays esports markets that resolve fast: between 1h and 24h
+// from now. Short enough for quick turns, long enough to actually catch a 2×
+// move. Tag 64 = Esports on the Gamma API (no politics, no crypto, no fluff).
+export const ESPORTS_TAG_ID = 64;
 export const MIN_DURATION_MS = 60 * 60 * 1000;
 export const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 
@@ -119,6 +121,7 @@ export async function fetchGammaMarkets(
     const max = new Date(now.getTime() + MAX_DURATION_MS).toISOString();
     const url =
       `${GAMMA_URL}/markets?active=true&closed=false` +
+      `&tag_id=${ESPORTS_TAG_ID}` +
       `&order=volume24hr&ascending=false&limit=${limit}` +
       `&end_date_min=${encodeURIComponent(min)}` +
       `&end_date_max=${encodeURIComponent(max)}`;
@@ -129,6 +132,75 @@ export async function fetchGammaMarkets(
     return raw
       .map(parseGammaMarket)
       .filter((m) => m !== null && isShortHorizon(m)) as ParsedMarket[];
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// News validation (Google News RSS)
+// ---------------------------------------------------------------------------
+
+const NEWS_URL = "https://news.google.com/rss/search";
+
+export interface Headline {
+  title: string;
+  date: string; // pubDate, e.g. "Tue, 11 Aug 2026 14:00:00 GMT"
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+// Pull team names (and the game) out of a market question like
+// "Dota 2: MOUZ vs Rune Eaters (BO3) - EPL Masters Playoffs".
+export function teamsFromQuestion(question: string): {
+  game: string;
+  teams: string[];
+} {
+  const clean = question
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[-–—].*$/, "");
+  const colon = clean.indexOf(":");
+  const game =
+    colon > 0 ? clean.slice(0, colon).trim() : "esports";
+  const rest = colon > 0 ? clean.slice(colon + 1) : clean;
+  const teams = rest
+    .split(/\s+vs\.?\s+/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { game, teams };
+}
+
+// Fetch the most recent headlines for a match. Never throws — returns [] on
+// any failure so the caller can decide (no news → no trade).
+export async function fetchHeadlines(
+  question: string,
+  limit = 8,
+): Promise<Headline[]> {
+  try {
+    const { game, teams } = teamsFromQuestion(question);
+    const named = teams.filter((t) => t.length >= 3);
+    const terms = named.length > 0 ? named : [game];
+    const query = terms.map((t) => `"${t}"`).join(" OR ") + ` ${game}`;
+    const url =
+      `${NEWS_URL}?q=${encodeURIComponent(query)}` +
+      "&hl=en-US&gl=US&ceid=US:en";
+    const res = await fetch(url, {
+      headers: { accept: "application/rss+xml" },
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
+    return items.slice(0, limit).map((item) => ({
+      title: decodeEntities(item.match(/<title>([^<]*)<\/title>/)?.[1] ?? ""),
+      date: item.match(/<pubDate>([^<]*)<\/pubDate>/)?.[1] ?? "",
+    })).filter((h) => h.title.length > 0);
   } catch {
     return [];
   }
@@ -285,7 +357,7 @@ export function computeSignal(input: SignalInput): Signal {
   let score = 0.6 * imbalance + 0.4 * momentumSignal;
 
   // Early-entry bonus: price is still cheap and momentum just started moving.
-  // Get in before the crowd does — that's where the 5× trades live.
+  // Get in before the crowd does — that's where the 2× trades live.
   const earlyYes = mid < 0.3 && momentum > 0.005;
   const earlyNo = mid > 0.7 && momentum < -0.005;
   if (earlyYes || earlyNo) {

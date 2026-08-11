@@ -4,8 +4,20 @@
 
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 const bookLevel = v.object({ price: v.number(), size: v.number() });
+
+export const newsValidator = v.object({
+  ts: v.number(),
+  verdict: v.union(
+    v.literal("YES"),
+    v.literal("NO"),
+    v.literal("UNCLEAR"),
+  ),
+  summary: v.string(),
+  headlines: v.array(v.string()),
+});
 
 export const bookValidator = v.object({
   ts: v.number(),
@@ -198,6 +210,42 @@ export const applyBookAndSignal = mutation({
       updatedAt,
     });
     return existing._id;
+  },
+});
+
+export const applyMarketNews = mutation({
+  args: { gammaId: v.string(), news: newsValidator },
+  handler: async (ctx, { gammaId, news }) => {
+    const existing = await ctx.db
+      .query("markets")
+      .withIndex("by_gamma_id", (q) => q.eq("gammaId", gammaId))
+      .first();
+    if (!existing) return null;
+    await ctx.db.patch(existing._id, { news });
+    return existing._id;
+  },
+});
+
+// Keeps the fast scan loop alive. The bot tick reschedules itself every few
+// seconds; this mutation is the single point of truth so that the 1-minute
+// cron backstop, the "Run genius now" button and the loop itself can never
+// accidentally spawn a second chain. Mutations on the same singleton row are
+// serialized by Convex, so concurrent callers collapse into one scheduling.
+export const scheduleNextTick = mutation({
+  args: { intervalMs: v.number() },
+  handler: async (ctx, { intervalMs }) => {
+    const [state] = await ctx.db.query("schedulerState").collect();
+    const now = Date.now();
+    if (state && now - state.lastScheduledAt < intervalMs) {
+      return { scheduled: false };
+    }
+    if (state) {
+      await ctx.db.patch(state._id, { lastScheduledAt: now });
+    } else {
+      await ctx.db.insert("schedulerState", { lastScheduledAt: now });
+    }
+    await ctx.scheduler.runAfter(intervalMs, api.bot.tick, {});
+    return { scheduled: true };
   },
 });
 

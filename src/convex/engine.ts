@@ -21,15 +21,17 @@ import {
   truncate,
   ParsedMarket,
 } from "./polymarket";
+import { validateMarketNews, NewsCheck } from "./news";
 
 export const MAX_OPEN_POSITIONS = 5;
 const MIN_SHARES = 5;
-const TAKE_PROFIT_MULT = 5.0; // sell when the position is worth 5× the entry
+const TAKE_PROFIT_MULT = 2.0; // sell when the position is worth 2× the entry
 const NEAR_CERTAIN_PRICE = 0.95; // ...or when it's basically resolved — lock it
 const STOP_LOSS_MULT = 0.75;
-const MAX_ENTRY_PRICE = 0.20; // entry only where a 5× target is reachable
+const MAX_ENTRY_PRICE = 0.05; // entry only below 5¢ — early entry or nothing
 const SIGNAL_MAX_AGE_MS = 10 * 60 * 1000;
-const BOOK_SCOPE = 24; // fetch order books for the top N markets (parallel)
+const NEWS_TTL_MS = 15 * 60 * 1000; // re-check headlines at most every 15 min
+const BOOK_SCOPE = 20; // fetch order books for the top N markets (parallel)
 
 // ---------------------------------------------------------------------------
 // Market data refresh
@@ -183,7 +185,7 @@ async function runUserTickLocked(
 
   // Refresh the live order book for every held market first. Exits must always
   // see current prices — even for markets that just resolved or dropped out of
-  // the top-N refresh scope, otherwise a position sitting at 5×+ can stay open
+  // the top-N refresh scope, otherwise a position sitting at 2×+ can stay open
   // forever on stale cached data.
   const heldMarkets = openPositions
     .map((p) => marketById.get(p.marketId))
@@ -353,8 +355,41 @@ async function runUserTickLocked(
       const signal = market.signal!;
       const side = signal.direction as "YES" | "NO";
       const price = clampPrice(side === "YES" ? signal.mid : 1 - signal.mid);
-      // Only enter where a 5× target is geometrically reachable.
+      // Only enter below 5¢ — early entry or nothing.
       if (price <= 0.02 || price > MAX_ENTRY_PRICE) continue;
+
+      // Anti-lose gate: never trade a side the news doesn't back. Cache the
+      // check on the market doc so the 5s loop doesn't hammer the LLM.
+      let news: NewsCheck | null = market.news ?? null;
+      if (!news || now - news.ts > NEWS_TTL_MS) {
+        news = await validateMarketNews(market.question, market.outcomes);
+        if (news) {
+          await ctx.runMutation(api.internal.applyMarketNews, {
+            gammaId: market.gammaId,
+            news,
+          });
+        }
+      }
+      if (!news || news.verdict === "UNCLEAR") {
+        await insertLog(
+          ctx,
+          userId,
+          "INFO",
+          `News check on "${truncate(market.question, 50)}" came back unclear — no news, no trade.`,
+          market._id,
+        );
+        continue;
+      }
+      if (news.verdict !== side) {
+        await insertLog(
+          ctx,
+          userId,
+          "INFO",
+          `News favors ${news.verdict} but the book says ${side} on "${truncate(market.question, 40)}" — trusting the news, skipping.`,
+          market._id,
+        );
+        continue;
+      }
 
       const budget = cash * config.aggression * signal.confidence;
       let shares = budget / price;
@@ -389,7 +424,7 @@ async function runUserTickLocked(
         shares,
         price,
         usd: cost,
-        reason: `5× TP entry @ ${cents(price)} — ${signal.reasons[0] ?? "early signal"}`,
+        reason: `2× TP entry @ ${cents(price)} — ${news?.summary ?? "early signal"}`,
       });
       await insertLog(ctx, userId, "GENIUS", buyLine(side, shares, price), market._id);
       entries += 1;
