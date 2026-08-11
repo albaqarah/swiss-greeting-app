@@ -279,6 +279,86 @@ export const setBotEnabled = mutation({
   },
 });
 
+export const closeAllPositions = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUser(ctx);
+    const now = Date.now();
+    const config = await ctx.db
+      .query("botConfigs")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+    if (!config) return null;
+
+    // Liquidate every open position at current market value, add the proceeds
+    // back to cash, and record each exit in the journal. Unlike resetAccount,
+    // the trade history and journal stay intact.
+    const positions = await ctx.db
+      .query("positions")
+      .withIndex("by_user_status", (q) =>
+        q.eq("userId", userId).eq("status", "OPEN"),
+      )
+      .collect();
+    const markets = await ctx.db.query("markets").collect();
+    const marketById = new Map(markets.map((m) => [m._id, m]));
+
+    let cash = config.cash;
+    let closed = 0;
+    for (const p of positions) {
+      const market = marketById.get(p.marketId);
+      if (!market) continue;
+      const yesMid = marketMid(market);
+      const valuePrice = p.side === "YES" ? yesMid : 1 - yesMid;
+      const proceeds = p.shares * valuePrice;
+      const pnl = proceeds - p.invested;
+      cash += proceeds;
+
+      await ctx.db.patch(p._id, {
+        status: "CLOSED",
+        closedAt: now,
+        realizedPnl: pnl,
+        reason: "closed manually",
+      });
+      await ctx.db.insert("trades", {
+        userId,
+        marketId: p.marketId,
+        side: p.side,
+        action: "SELL",
+        shares: p.shares,
+        price: valuePrice,
+        usd: proceeds,
+        pnl,
+        reason: "closed manually — all positions flat",
+        createdAt: now,
+      });
+      await ctx.db.insert("botLogs", {
+        userId,
+        level: "GENIUS",
+        message: `Flat now: closed ${p.side} ${Math.round(p.shares)} @ ${(valuePrice * 100).toFixed(1)}¢ (${pnl >= 0 ? "+" : ""}${((valuePrice - p.avgPrice) / p.avgPrice * 100).toFixed(1)}%).`,
+        marketId: p.marketId,
+        createdAt: now,
+      });
+      closed += 1;
+    }
+
+    await ctx.db.patch(config._id, {
+      cash,
+      lastTickAt: now,
+      updatedAt: now,
+    });
+
+    if (closed > 0) {
+      await ctx.db.insert("botLogs", {
+        userId,
+        level: "INFO",
+        message: `${closed} position${closed > 1 ? "s" : ""} closed. The board is clean — waiting for fresh signals.`,
+        createdAt: now,
+      });
+    }
+    return closed;
+  },
+});
+
 export const setAggression = mutation({
   args: { aggression: v.number() },
   handler: async (ctx, { aggression }) => {

@@ -1,7 +1,7 @@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Loader2, RefreshCw, RotateCcw, Zap } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, SquareX, Zap } from "lucide-react";
 import { MicroLabel } from "./shared";
 
 export function BotControls({
@@ -13,6 +13,7 @@ export function BotControls({
   onAggression,
   onRunTick,
   onRefresh,
+  onCloseAll,
   onReset,
 }: {
   enabled: boolean;
@@ -23,6 +24,7 @@ export function BotControls({
   onAggression: (value: number) => void;
   onRunTick: () => void;
   onRefresh: () => void;
+  onCloseAll: () => void;
   onReset: () => void;
 }) {
   return (
@@ -104,6 +106,15 @@ export function BotControls({
         >
           <RefreshCw className="size-3.5" />
           Refresh data
+        </button>
+        <button
+          type="button"
+          onClick={onCloseAll}
+          disabled={busy}
+          className="inline-flex items-center gap-2 border border-swiss-blue px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-swiss-blue transition-colors hover:bg-swiss-blue hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <SquareX className="size-3.5" />
+          Close all
         </button>
         <button
           type="button"

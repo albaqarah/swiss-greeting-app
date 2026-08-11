@@ -70,6 +70,7 @@ export default function Dashboard() {
   const getMarketHistory = useAction(api.markets.getMarketHistory);
   const setBotEnabled = useMutation(api.dashboard.setBotEnabled);
   const setAggression = useMutation(api.dashboard.setAggression);
+  const closeAllPositions = useMutation(api.dashboard.closeAllPositions);
   const resetAccount = useMutation(api.dashboard.resetAccount);
 
   // First visit: kick off a market refresh so the board isn't empty.
@@ -135,6 +136,16 @@ export default function Dashboard() {
       console.error(error);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleCloseAll = () => {
+    if (
+      window.confirm(
+        "Close all open positions at market value? P&L will be recorded in the journal.",
+      )
+    ) {
+      runAction(() => closeAllPositions());
     }
   };
 
@@ -289,6 +300,7 @@ export default function Dashboard() {
                 }
                 onRunTick={() => runAction(() => runTick())}
                 onRefresh={() => runAction(() => refreshMarkets())}
+                onCloseAll={handleCloseAll}
                 onReset={handleReset}
               />
             </div>
