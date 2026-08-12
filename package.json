@@ -15,5 +15,8 @@
   },
   "engines": {
     "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@vly-ai/integrations": "^0.6.12"
   }
 }

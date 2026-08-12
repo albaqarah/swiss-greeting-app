@@ -1,3 +1,4 @@
+import { vlyPlugin } from "@vly-ai/integrations";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
@@ -8,7 +9,7 @@ import { defineConfig } from "vite";
 // so this file is only used by local development / preview tooling.
 export default defineConfig({
   root: "web",
-  plugins: [react(), tailwindcss()],
+  plugins: [vlyPlugin(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./web/src", import.meta.url)),
