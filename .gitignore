@@ -1,4 +1,20 @@
+# Dependencies & build output
+node_modules/
+dist/
+
+# Local runtime data (SQLite database + journals) and logs
+data/
+logs/
+*.log
+
+# Secrets — never commit
+.env
 .env.local
-node_modules
-dist
-src/convex/_generated
+.env.*.local
+.env.example
+
+# Package manager lock (VPS installs with npm; bun regenerates its own)
+bun.lock
+
+# TypeScript build info
+*.tsbuildinfo

@@ -1,272 +1,195 @@
-## Overview
-
-This project uses the following tech stack:
-- Vite
-- Typescript
-- React Router v7 (all imports from `react-router` instead of `react-router-dom`)
-- React 19 (for frontend components)
-- Tailwind v4 (for styling)
-- Shadcn UI (for UI components library)
-- Lucide Icons (for icons)
-- Convex (for backend & database)
-- Convex Auth (for authentication)
-- Framer Motion (for animations)
-- Three js (for 3d models)
-
-All relevant files live in the 'src' directory.
-
-Use bun for the package manager.
-
-## Setup
-
-This project is set up already and running on a cloud environment, as well as a convex development in the sandbox.
-
-## Environment Variables
-
-The project is set up with project specific CONVEX_DEPLOYMENT and VITE_CONVEX_URL environment variables on the client side.
-
-The convex server has a separate set of environment variables that are accessible by the convex backend.
-
-Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
-
-
-# Using Authentication (Important!)
-
-You must follow these conventions when using authentication.
-
-## Auth is already set up.
-
-All convex authentication functions are already set up. The auth currently uses email OTP and anonymous users, but can support more.
-
-The email OTP configuration is defined in `src/convex/auth/emailOtp.ts`. DO NOT MODIFY THIS FILE.
-
-Also, DO NOT MODIFY THESE AUTH FILES: `src/convex/auth.config.ts` and `src/convex/auth.ts`.
-
-## Using Convex Auth on the backend
-
-On the `src/convex/users.ts` file, you can use the `getCurrentUser` function to get the current user's data.
-
-## Using Convex Auth on the frontend
-
-The `/auth` page is already set up to use auth. Navigate to `/auth` for all log in / sign up sequences.
-
-You MUST use this hook to get user data. Never do this yourself without the hook:
-```typescript
-import { useAuth } from "@/hooks/use-auth";
-
-const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
-```
-
-## Protected Routes
-
-The starter `/dashboard` route is protected with `RequireAuth`, which sends
-signed-out users to `/auth?returnTo=<current route>`. Extend that page for the
-product's authenticated experience, and reuse `RequireAuth` when adding another
-protected route.
-
-## Auth Page
-
-The auth page is defined in `src/pages/Auth.tsx`. Send sign-in and sign-up actions
-to `/auth`.
-
-## Authorization
-
-You can perform authorization checks on the frontend and backend.
-
-On the frontend, you can use the `useAuth` hook to get the current user's data and authentication state.
-
-You should also be protecting queries, mutations, and actions at the base level, checking for authorization securely.
-
-## Adding a redirect after auth
-
-The `/auth` route in `src/main.tsx` redirects to `/dashboard` by default. If the
-product's main authenticated route is different, update `redirectAfterAuth` to
-that route. A validated same-origin `returnTo` query parameter takes priority so
-users can resume the protected page they originally requested. Never leave an
-authenticated product redirecting back to the public landing page.
-
-## Complete authenticated products
-
-When the requested product implies accounts, a workspace, a dashboard, or other
-signed-in functionality, the task is not complete with only a landing page and
-auth form. Build the main authenticated experience, protect its route, and verify
-that signing in reaches it.
-
-# Frontend Conventions
-
-You will be using the Vite frontend with React 19, Tailwind v4, and Shadcn UI.
-
-Generally, pages should be in the `src/pages` folder, and components should be in the `src/components` folder.
-
-Shadcn primitives are located in the `src/components/ui` folder and should be used by default.
-
-## Page routing
-
-Your page component should go under the `src/pages` folder.
-
-When adding a page, update the react router configuration in `src/main.tsx` to include the new route you just added.
-
-## Shad CN conventions
-
-Follow these conventions when using Shad CN components, which you should use by default.
-- Remember to use "cursor-pointer" to make the element clickable
-- For title text, use the "tracking-tight font-bold" class to make the text more readable
-- Always make apps MOBILE RESPONSIVE. This is important
-- AVOID NESTED CARDS. Try and not to nest cards, borders, components, etc. Nested cards add clutter and make the app look messy.
-- AVOID SHADOWS. Avoid adding any shadows to components. stick with a thin border without the shadow.
-- Avoid skeletons; instead, use the loader2 component to show a spinning loading state when loading data.
-
-
-## Landing Pages
-
-You must always create good-looking designer-level styles to your application. 
-- Make it well animated and fit a certain "theme", ie neo brutalist, retro, neumorphism, glass morphism, etc
-
-Use known images and emojis from online.
-
-If the user is logged in already, show the get started button to say "Dashboard" or "Profile" instead to take them there.
-
-## Responsiveness and formatting
-
-Make sure pages are wrapped in a container to prevent the width stretching out on wide screens. Always make sure they are centered aligned and not off-center.
-
-Always make sure that your designs are mobile responsive. Verify the formatting to ensure it has correct max and min widths as well as mobile responsiveness.
-
-- Always create sidebars for protected dashboard pages and navigate between pages
-- Always create navbars for landing pages
-- On these bars, the created logo should be clickable and redirect to the index page
-
-## Animating with Framer Motion
-
-You must add animations to components using Framer Motion. It is already installed and configured in the project.
-
-To use it, import the `motion` component from `framer-motion` and use it to wrap the component you want to animate.
-
-
-### Other Items to animate
-- Fade in and Fade Out
-- Slide in and Slide Out animations
-- Rendering animations
-- Button clicks and UI elements
-
-Animate for all components, including on landing page and app pages.
-
-## Three JS Graphics
-
-Your app comes with three js by default. You can use it to create 3D graphics for landing pages, games, etc.
-
-
-## Colors
-
-You can override colors in: `src/index.css`
-
-This uses the oklch color format for tailwind v4.
-
-Always use these color variable names.
-
-Make sure all ui components are set up to be mobile responsive and compatible with both light and dark mode.
-
-Set theme using `dark` or `light` variables at the parent className.
-
-## Styling and Theming
-
-When changing the theme, always change the underlying theme of the shad cn components app-wide under `src/components/ui` and the colors in the index.css file.
-
-Avoid hardcoding in colors unless necessary for a use case, and properly implement themes through the underlying shad cn ui components.
-
-When styling, ensure buttons and clickable items have pointer-click on them (don't by default).
-
-Always follow a set theme style and ensure it is tuned to the user's liking.
-
-## Toasts
-
-You should always use toasts to display results to the user, such as confirmations, results, errors, etc.
-
-Use the shad cn Sonner component as the toaster. For example:
+# 🤖 Super Genius Bot — Polymarket Esports Bot (VPS)
+
+Bot Polymarket kategori **esports** yang jalan sendiri di VPS kamu. Satu proses
+Node (via `pm2`) menjalankan semuanya: mesin trading, REST API, dan dashboard
+UI. Database pakai SQLite bawaan Node (`node:sqlite`) — **nol dependency
+native**, tinggal `npm install` + `npm run build` + `pm2 start`.
 
 ```
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-export function SonnerDemo() {
-  return (
-    <Button
-      variant="outline"
-      onClick={() =>
-        toast("Event has been created", {
-          description: "Sunday, December 03, 2023 at 9:00 AM",
-          action: {
-            label: "Undo",
-            onClick: () => console.log("Undo"),
-          },
-        })
-      }
-    >
-      Show Toast
-    </Button>
-  )
-}
+├── ecosystem.config.cjs   ← config pm2
+├── env.example            ← contoh config (copy ke .env)
+├── server/                ← backend: bot engine + REST API (Node murni)
+│   └── smoke.mjs          ← smoke test otomatis (npm run smoke -w server)
+└── web/                   ← dashboard React (di-build ke web/dist)
 ```
 
-Remember to import { toast } from "sonner". Usage: `toast("Event has been created.")`
+Aturan bot:
+- **Esports only** (Gamma tag 64), market resolve 1–24 jam
+- **Entry hanya di bawah 5¢** (early entry)
+- **Take profit 2×**, stop loss 25%, near-certain exit 95¢
+- **Scan tiap 5 detik**, jalan terus 24/7 walau dashboard ditutup
+- Default **DRY RUN** (paper trading $1.000 virtual) — live mode terpisah & butuh wiring
 
-## Dialogs
+---
 
-Always ensure your larger dialogs have a scroll in its content to ensure that its content fits the screen size. Make sure that the content is not cut off from the screen.
+## 1. Prasyarat VPS
 
-Ideally, instead of using a new page, use a Dialog instead. 
+- VPS Linux (Ubuntu/Debian recommended), RAM ≥ 512MB sudah cukup
+- **Node.js ≥ 22.5** (pakai Node 24 LTS biar paling aman)
+- `git`, `npm`, dan `pm2` (global)
 
-# Using the Convex backend
+```bash
+# install Node 24 (via NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
-You will be implementing the convex backend. Follow your knowledge of convex and the documentation to implement the backend.
+# pm2 global
+sudo npm install -g pm2
 
-## The Convex Schema
-
-You must correctly follow the convex schema implementation.
-
-The schema is defined in `src/convex/schema.ts`.
-
-Do not include the `_id` and `_creationTime` fields in your queries (it is included by default for each table).
-Do not index `_creationTime` as it is indexed for you. Never have duplicate indexes.
-
-
-## Convex Actions: Using CRUD operations
-
-When running anything that involves external connections, you must use a convex action with "use node" at the top of the file.
-
-You cannot have queries or mutations in the same file as a "use node" action file. Thus, you must use pre-built queries and mutations in other files.
-
-You can also use the pre-installed internal crud functions for the database:
-
-```ts
-// in convex/users.ts
-import { crud } from "convex-helpers/server/crud";
-import schema from "./schema.ts";
-
-export const { create, read, update, destroy } = crud(schema, "users");
-
-// in some file, in an action:
-const user = await ctx.runQuery(internal.users.read, { id: userId });
-
-await ctx.runMutation(internal.users.update, {
-  id: userId,
-  patch: {
-    status: "inactive",
-  },
-});
+# cek versi
+node -v    # harus v22.5.0 atau lebih baru
 ```
 
+⚠️ Pastikan VPS bisa akses `gamma-api.polymarket.com` dan `clob.polymarket.com`
+(API publik Polymarket, tidak butuh API key).
 
-## Common Convex Mistakes To Avoid
+---
 
-When using convex, make sure:
-- Document IDs are referenced as `_id` field, not `id`.
-- Document ID types are referenced as `Id<"TableName">`, not `string`.
-- Document object types are referenced as `Doc<"TableName">`.
-- Keep schemaValidation to false in the schema file.
-- You must correctly type your code so that it passes the type checker.
-- You must handle null / undefined cases of your convex queries for both frontend and backend, or else it will throw an error that your data could be null or undefined.
-- Always use the `@/folder` path, with `@/convex/folder/file.ts` syntax for importing convex files.
-- This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
-- Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
-- NEVER have return type validators.
+## 2. Copy project ke VPS
+
+```bash
+# opsi A — git
+git clone <repo-mu> /opt/genius-bot && cd /opt/genius-bot
+
+# opsi B — scp dari laptop
+scp -r . root@IP_VPS:/opt/genius-bot/
+```
+
+Jangan pernah commit `.env` ke git — `.env` sudah di-`.gitignore`, dan template
+config-nya ada di `env.example` (copy, bukan rename).
+
+---
+
+## 3. Install & build
+
+```bash
+cd /opt/genius-bot
+npm install        # install server + web (workspaces)
+npm run build      # compile server + build dashboard
+```
+
+Cek cepat dulu (opsional tapi recommended — mengetes server + API + 1 tick
+ke Polymarket pakai database sementara):
+
+```bash
+npm run smoke -w server
+```
+
+Harusnya berakhir dengan `SMOKE TEST PASSED ✓`.
+
+---
+
+## 4. Config
+
+```bash
+cp env.example .env
+nano .env
+```
+
+Yang wajib diganti:
+
+| Variable | Wajib? | Keterangan |
+|---|---|---|
+| `ADMIN_PIN` | ✅ wajib | PIN buat login dashboard — **ganti!** |
+| `PORT` | default 3456 | port server |
+| `HOST` | default `0.0.0.0` | biar bisa diakses dari luar; `127.0.0.1` kalau mau lokal-only |
+| `BOT_MODE` | default `dry` | `dry` = paper trading. **Jangan `live` dulu!** |
+| `SCAN_INTERVAL_MS` | default 5000 | jeda scan |
+
+Sisanya (`POLY_*`) kosongin dulu — cuma dipakai pas live mode nanti.
+
+---
+
+## 5. Jalankan via pm2
+
+```bash
+cd /opt/genius-bot
+pm2 start ecosystem.config.cjs
+pm2 save                  # simpan daftar proses
+pm2 startup               # auto-start setelah VPS reboot (ikuti instruksinya)
+```
+
+Cek status:
+
+```bash
+pm2 status                # genius-bot online
+pm2 logs genius-bot       # lihat log bot (scan, entry, error)
+```
+
+---
+
+## 6. Buka dashboard
+
+Buka `http://IP_VPS:3456` di browser → login pakai `ADMIN_PIN`.
+
+Yang bisa kamu lakukan:
+1. **Arm bot** (switch merah di kiri atas) → bot mulai scan tiap 5 detik.
+2. Lihat **Live markets** (esports, resolve ≤ 24 jam), **Positions**, dan
+   **Genius journal** (log + trades).
+3. Tombol **Run genius now** = paksa 1 tick langsung.
+4. **Close all** = tutup semua posisi di harga market (history tetap ada).
+   **Reset account** = balikin ke $1.000 dan hapus semua history.
+
+Header dashboard nunjukin mode: **DRY RUN · PAPER** (biru) vs **LIVE** (merah).
+
+---
+
+## 7. Update bot
+
+```bash
+cd /opt/genius-bot
+git pull                     # atau scp ulang file yang berubah
+npm install && npm run build
+pm2 restart genius-bot
+pm2 logs genius-bot          # cek boot sukses
+```
+
+Database (`data/genius.db`) **tidak ikut kehapus** — posisi & journal aman.
+
+---
+
+## 8. Mode LIVE (real money) — BACA DULU
+
+Bot di-ship dengan **live execution yang sengaja BELUM di-wire**. `BOT_MODE=live`
+tanpa wiring = bot menolak trading dan tetap dry (aman, log-nya jelas).
+
+Alurnya yang aman:
+
+1. **Dry run dulu minimal beberapa hari** sampai pola entry/TP-nya konsisten
+   dan kamu paham cara baca journal.
+2. Siapkan wallet Polymarket: deposit USDC ke address Polymarket kamu
+   (https://polymarket.com/profile), lalu buat **API Key** (CLOB API keys).
+   Kamu butuh: `POLY_API_KEY`, `POLY_API_SECRET`, `POLY_API_PASSPHRASE`,
+   `POLY_WALLET_ADDRESS`, dan private key wallet (`POLY_PRIVATE_KEY`).
+3. **Wiring live execution** ke bridge di `server/src/live.ts` pakai SDK resmi
+   Polymarket (`@polymarket/client`) — minta dibantuin dulu, jangan di-skip.
+   Bridge ini yang ngepasang order beneran; sampai itu diisi, bot gak akan
+   pernah keluar uang.
+4. Set `BOT_MODE=live`, isi keys di `.env`, set `POLY_MAX_ORDER_USD` kecil
+   (misal 1–10), restart pm2, dan tes dengan ukuran sekecil mungkin.
+
+> Jangan pernah taruh private key di tempat lain atau commit `.env` ke git.
+> `.env` sudah di-gitignore.
+
+---
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| `pm2 status` merah / restart loop | `pm2 logs genius-bot` → cek error; pastikan `npm run build` sudah jalan |
+| Port keblokir | `sudo ufw allow 3456/tcp` (atau pakai reverse proxy) |
+| Dashboard kosong / 404 | `WEB_DIR` di `.env` harus `web/dist`, dan `npm run build -w web` sudah jalan |
+| Node < 22.5 | `node:sqlite` gak ada → upgrade Node (lihat step 1) |
+| Bot gak pernah entry | Itu normal — filter ketat (≤5¢ + signal kuat + esports 1–24 jam). Cek journal buat alasan skip tiap tick |
+| Lupa PIN | Edit `ADMIN_PIN` di `.env` → `pm2 restart genius-bot` |
+| Mau akses via domain + HTTPS | Pasang Caddy/nginx reverse proxy ke `127.0.0.1:3456` |
+
+---
+
+## Catatan keamanan
+
+- **Ganti `ADMIN_PIN`** sebelum expose ke internet.
+- Dashboard cuma dilindungi PIN + cookie session (7 hari). Kalau VPS-mu
+  publik, pasang reverse proxy + HTTPS (Caddy = paling gampang, 1 baris config).
+- Bot ini **bukan nasihat keuangan**. Esports market volatile; live mode = uang asli.
