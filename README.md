@@ -95,6 +95,9 @@ Yang wajib diganti:
 | `HOST` | default `0.0.0.0` | biar bisa diakses dari luar; `127.0.0.1` kalau mau lokal-only |
 | `BOT_MODE` | default `dry` | `dry` = paper trading. **Jangan `live` dulu!** |
 | `SCAN_INTERVAL_MS` | default 5000 | jeda scan |
+| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | opsional | notif Telegram (lihat §6.1) |
+| `REPORT_TIMEZONE` / `DAILY_REPORT_HOUR` | default `Asia/Jakarta` / `7` | zona waktu & jam laporan harian |
+| `COPY_TRADE_WALLET` | opsional | wallet Polymarket yang mau diikuti (lihat §6.2) |
 
 Sisanya (`POLY_*`) kosongin dulu — cuma dipakai pas live mode nanti.
 
@@ -133,6 +136,54 @@ Yang bisa kamu lakukan:
 Header dashboard nunjukin mode: **DRY RUN · PAPER** (biru) vs **LIVE** (merah).
 
 ---
+
+### 6.1 Notifikasi Telegram (opsional)
+
+Bot bisa kirim notif ke Telegram: **signal entry**, **take profit / stop loss**,
+**daily P&L** (reset tiap 24 jam), dan **morning briefing** — semua dikirim
+jam 7 pagi (bisa diubah lewat `DAILY_REPORT_HOUR` + `REPORT_TIMEZONE`).
+
+Setup (5 menit):
+
+1. Buka Telegram → cari **@BotFather** → `/newbot` → ikutin instruksinya →
+   salin **token**-nya (format `123456:ABC-...`).
+2. Kirim pesan apa aja ke bot baru kamu (biar chat-nya ke-register).
+3. Cari **@userinfobot** → tekan *Start* → dia kirim `Id` kamu (angka).
+4. Isi di `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=<token dari BotFather>
+   TELEGRAM_CHAT_ID=<id dari userinfobot>
+   ```
+5. `pm2 restart genius-bot` — di log boot bakal keliatan `telegram: connected ✓`.
+
+### 6.2 Copy trade — ngekor wallet (opsional)
+
+Bot bisa **meniru entry wallet** Polymarket yang kamu pilih. Isi `COPY_TRADE_WALLET`
+dengan alamat `0x…` yang tampil di halaman profil wallet tersebut:
+
+```
+COPY_TRADE_WALLET=0x1234…abcd
+COPY_MAX_OPEN=5            # maksimal posisi hasil copy yang dibuka
+COPY_MAX_ORDER_USD=10      # cap per entry copy (USD)
+COPY_MIN_TRADE_USD=1       # abaikan trade wallet di bawah nominal ini
+COPY_SCAN_INTERVAL_MS=30000 # seberapa sering cek trade baru wallet (ms)
+```
+
+Cara kerjanya:
+- Bot cek trade terbaru wallet tiap `COPY_SCAN_INTERVAL_MS` lewat Data API
+  Polymarket (publik, tanpa API key). **Scan pertama cuma mulai mengikuti dari
+  saat itu** — nggak nge-backfill trade lama.
+- Setiap **BUY baru** wallet → bot buka posisi yang sama (market + outcome
+  sama), ukuran mengikuti nilai trade wallet tapi di-cap `COPY_MAX_ORDER_USD`.
+- **Exit tetap pakai aturan bot sendiri** (TP 2× / SL 25% / near-certain) —
+  wallet cuma nunjukin tempat masuk, genius yang mutusin kapan jual.
+- Satu posisi per market+outcome; kalau wallet nambah posisi yang sama,
+  diabaikan (nggak di-average).
+- Entry copy ikut mode: di **dry run** pakai cash virtual, di **live** lewat
+  bridge real-money (yang masih perlu wiring dulu).
+
+> Pilih wallet dengan bijak — kamu ikutin persis BUY mereka, termasuk kalau
+> mereka main di market yang bukan esports (misal crypto up/down).
 
 ## 7. Update bot
 

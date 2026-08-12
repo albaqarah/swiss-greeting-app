@@ -113,4 +113,13 @@ export interface MetaData {
   mode: "dry" | "live";
   scanIntervalMs: number;
   version: string;
+  telegramConfigured: boolean;
+  copyTradeWallet: string | null;
+  copyTradeEnabled: boolean;
+  copyMaxOpen: number;
+  copyMaxOrderUsd: number;
+  copyMinTradeUsd: number;
+  copyScanIntervalMs: number;
+  reportTimezone: string;
+  reportHour: number;
 }

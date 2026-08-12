@@ -13,6 +13,7 @@ import {
   allMarkets,
   applyBookAndSignal,
   applyBookOnly,
+  clampPrice,
   closePosition,
   getConfig,
   hasOpenPositions,
@@ -21,6 +22,7 @@ import {
   insertTrade,
   marketByGammaId,
   marketById,
+  marketMid,
   markMarketClosed,
   openPositions,
   priceHistoryByMarket,
@@ -46,7 +48,9 @@ import {
   type ParsedMarket,
 } from "./polymarket.js";
 import { botMode } from "./config.js";
+import { bumpDaily } from "./daily.js";
 import { assertLiveReady, closeLivePosition, placeLiveOrder } from "./live.js";
+import { escapeHtml, notify } from "./notify.js";
 
 export const MAX_OPEN_POSITIONS = 5;
 const MIN_SHARES = 5;
@@ -229,6 +233,10 @@ export async function runUserTick(db: DatabaseSync): Promise<boolean> {
           reason: "market resolved",
         });
         insertLog(db, "GENIUS", settleLine(position.side, price, pnl), market.id);
+        bumpDaily(db, { settled: 1, pnl });
+        notify(
+          `✅ <b>SETTLED</b>\n<b>${position.side}</b> ${Math.round(position.shares)} shares @ ${cents(price)}\n${escapeHtml(truncate(market.question, 120))}\n${pnl >= 0 ? "💚 +" : "🔻 "}$${Math.abs(pnl).toFixed(2)}`,
+        );
         continue;
       }
 
@@ -278,6 +286,16 @@ export async function runUserTick(db: DatabaseSync): Promise<boolean> {
             : nearCertainLine(position.side, value, pnlPct * 100),
           market.id,
         );
+        bumpDaily(db, takeProfitHit ? { tp: 1, pnl } : { near_certain: 1, pnl });
+        if (takeProfitHit) {
+          notify(
+            `🎯 <b>TAKE PROFIT 2×</b>\n<b>${position.side}</b> ${Math.round(position.shares)} shares @ ${cents(value)}\n${escapeHtml(truncate(market.question, 120))}\n📈 +$${pnl.toFixed(2)} (${(pnlPct * 100).toFixed(1)}%)`,
+          );
+        } else {
+          notify(
+            `💵 <b>NEAR-CERTAIN EXIT</b>\n<b>${position.side}</b> ${Math.round(position.shares)} shares @ ${cents(value)}\n${escapeHtml(truncate(market.question, 120))}\n${pnl >= 0 ? "💚 +" : "🔻 "}$${Math.abs(pnl).toFixed(2)} (${(pnlPct * 100).toFixed(1)}%)`,
+          );
+        }
       } else if (value <= position.avgPrice * STOP_LOSS_MULT) {
         if (mode === "live") {
           try {
@@ -307,6 +325,10 @@ export async function runUserTick(db: DatabaseSync): Promise<boolean> {
           reason: "stop-loss",
         });
         insertLog(db, "GENIUS", stopLossLine(position.side, value, pnlPct * 100), market.id);
+        bumpDaily(db, { sl: 1, pnl });
+        notify(
+          `🛑 <b>STOP LOSS</b>\n<b>${position.side}</b> ${Math.round(position.shares)} shares @ ${cents(value)}\n${escapeHtml(truncate(market.question, 120))}\n${pnl >= 0 ? "💚 +" : "🔻 "}$${Math.abs(pnl).toFixed(2)} (${(pnlPct * 100).toFixed(1)}%)`,
+        );
       }
     } catch (error) {
       // One bad position must never block the rest of the exits.
@@ -388,6 +410,10 @@ export async function runUserTick(db: DatabaseSync): Promise<boolean> {
         reason: `2× TP entry @ ${cents(price)} — early signal`,
       });
       insertLog(db, "GENIUS", buyLine(side, shares, price), market.id);
+      bumpDaily(db, { entries: 1 });
+      notify(
+        `🚀 <b>ENTRY</b>\n<b>${side}</b> ${Math.round(shares)} shares @ ${cents(price)}\n${escapeHtml(truncate(market.question, 120))}\n💵 $${cost.toFixed(2)} · 📈 target 2×`,
+      );
       entries += 1;
     }
 
@@ -431,27 +457,10 @@ export async function getMarketHistory(
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Mid of the YES token. Works with a two-sided book, a one-sided book (the
-// visible side is the best estimate of where it trades), or falls back to the
-// last Gamma outcome price. One-sided books are exactly what you get when a
-// market is basically resolved — the exit logic must still see ~100¢.
-export function marketMid(market: Market): number {
-  const book = market.book;
-  if (book && (book.bids.length > 0 || book.asks.length > 0)) {
-    const bestBid = book.bids[0]?.price;
-    const bestAsk = book.asks[0]?.price;
-    if (bestBid !== undefined && bestAsk !== undefined) {
-      return (bestBid + bestAsk) / 2;
-    }
-    if (bestAsk !== undefined) return bestAsk;
-    if (bestBid !== undefined) return bestBid;
-  }
-  return market.outcomePrices[0] ?? 0.5;
-}
-
-export function clampPrice(value: number): number {
-  return Math.min(0.98, Math.max(0.02, value));
-}
+// marketMid / clampPrice now live in db.ts (shared by engine, api, daily and
+// copy without creating an import cycle). Re-exported here so existing
+// callers that import them from engine keep working.
+export { marketMid, clampPrice } from "./db.js";
 
 // Keep the type import happy for positions that reference markets (unused by
 // default, but handy for debugging and future features).

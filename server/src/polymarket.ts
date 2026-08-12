@@ -211,6 +211,29 @@ export async function fetchClosedGammaMarkets(
   }
 }
 
+/**
+ * Fetch specific markets by condition id (used by copy trade to resolve a
+ * wallet's trade into a market we can hold — may be any category, not just
+ * esports, since we mirror the wallet's own picks).
+ */
+export async function fetchGammaMarketsByConditionIds(
+  conditionIds: string | string[],
+): Promise<ParsedMarket[]> {
+  try {
+    const ids = Array.isArray(conditionIds) ? conditionIds.join(",") : conditionIds;
+    const url = `${GAMMA_URL}/markets?condition_ids=${encodeURIComponent(ids)}`;
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as RawGammaMarket[];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(parseGammaMarket)
+      .filter((m) => m !== null) as ParsedMarket[];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchPriceHistory(tokenId: string): Promise<PricePoint[] | null> {
   try {
     const url = `${CLOB_URL}/prices-history?market=${tokenId}&interval=1d&fidelity=60`;

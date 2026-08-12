@@ -3,6 +3,8 @@
 // double-entering or double-exiting the same account.
 
 import type { DatabaseSync } from "node:sqlite";
+import { loadConfig } from "./config.js";
+import { copyTradeTick } from "./copy.js";
 import { refreshMarketData, runUserTick } from "./engine.js";
 
 let busy = false;
@@ -11,6 +13,8 @@ export interface TickResult {
   fetched: number;
   books: number;
   ran: boolean;
+  copyChecked: boolean;
+  copyCopied: number;
   reason?: string;
 }
 
@@ -18,7 +22,9 @@ export async function runBotTick(
   db: DatabaseSync,
   options: { refresh?: boolean } = {},
 ): Promise<TickResult> {
-  if (busy) return { fetched: 0, books: 0, ran: false, reason: "tick in progress" };
+  if (busy) {
+    return { fetched: 0, books: 0, ran: false, copyChecked: false, copyCopied: 0, reason: "tick in progress" };
+  }
   busy = true;
   try {
     let fetched = 0;
@@ -34,7 +40,16 @@ export async function runBotTick(
       }
     }
     const ran = await runUserTick(db);
-    return { fetched, books, ran };
+    let copyChecked = false;
+    let copyCopied = 0;
+    try {
+      const copy = await copyTradeTick(db, loadConfig());
+      copyChecked = copy.checked;
+      copyCopied = copy.copied;
+    } catch (error) {
+      console.error("copy trade error:", error);
+    }
+    return { fetched, books, ran, copyChecked, copyCopied };
   } finally {
     busy = false;
   }

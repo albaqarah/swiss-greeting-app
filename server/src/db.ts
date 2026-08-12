@@ -107,6 +107,22 @@ export interface PriceHistory {
   fetchedAt: number;
 }
 
+export interface DailyStats {
+  day: string;
+  entries: number;
+  copy_entries: number;
+  tp: number;
+  sl: number;
+  near_certain: number;
+  settled: number;
+  closed_other: number;
+  pnl: number;
+  wins: number;
+  losses: number;
+  win_usd: number;
+  loss_usd: number;
+}
+
 export interface NewMarket {
   gammaId: string;
   conditionId: string;
@@ -206,6 +222,27 @@ CREATE TABLE IF NOT EXISTS price_history (
   token_id TEXT NOT NULL,
   points TEXT NOT NULL DEFAULT '[]',
   fetched_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS daily_stats (
+  day TEXT PRIMARY KEY,
+  entries INTEGER NOT NULL DEFAULT 0,
+  copy_entries INTEGER NOT NULL DEFAULT 0,
+  tp INTEGER NOT NULL DEFAULT 0,
+  sl INTEGER NOT NULL DEFAULT 0,
+  near_certain INTEGER NOT NULL DEFAULT 0,
+  settled INTEGER NOT NULL DEFAULT 0,
+  closed_other INTEGER NOT NULL DEFAULT 0,
+  pnl REAL NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  losses INTEGER NOT NULL DEFAULT 0,
+  win_usd REAL NOT NULL DEFAULT 0,
+  loss_usd REAL NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
@@ -362,6 +399,13 @@ export function marketByGammaId(db: DatabaseSync, gammaId: string): Market | nul
 
 export function marketById(db: DatabaseSync, id: number): Market | null {
   const row = db.prepare("SELECT * FROM markets WHERE id = ?").get(id) as Row | undefined;
+  return row ? mapMarket(row) : null;
+}
+
+export function marketByConditionId(db: DatabaseSync, conditionId: string): Market | null {
+  const row = db
+    .prepare("SELECT * FROM markets WHERE condition_id = ?")
+    .get(conditionId) as Row | undefined;
   return row ? mapMarket(row) : null;
 }
 
@@ -554,6 +598,97 @@ export function listLogs(db: DatabaseSync, limit = 60): LogEntry[] {
 }
 
 // ---------------------------------------------------------------------------
+// Meta (key/value) + daily stats
+// ---------------------------------------------------------------------------
+
+export function getMeta(db: DatabaseSync, key: string): string | null {
+  const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row ? row.value : null;
+}
+
+export function setMeta(db: DatabaseSync, key: string, value: string): void {
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(key, value);
+}
+
+export function getDailyStats(db: DatabaseSync, day: string): DailyStats | null {
+  const row = db.prepare("SELECT * FROM daily_stats WHERE day = ?").get(day) as Row | undefined;
+  if (!row) return null;
+  return {
+    day: String(row.day),
+    entries: asNum(row.entries),
+    copy_entries: asNum(row.copy_entries),
+    tp: asNum(row.tp),
+    sl: asNum(row.sl),
+    near_certain: asNum(row.near_certain),
+    settled: asNum(row.settled),
+    closed_other: asNum(row.closed_other),
+    pnl: asNum(row.pnl),
+    wins: asNum(row.wins),
+    losses: asNum(row.losses),
+    win_usd: asNum(row.win_usd),
+    loss_usd: asNum(row.loss_usd),
+  };
+}
+
+export function deleteDailyStats(db: DatabaseSync, day: string): void {
+  db.prepare("DELETE FROM daily_stats WHERE day = ?").run(day);
+}
+
+/** Accumulate a trade event into the current daily period's counters. */
+export function bumpDailyStat(
+  db: DatabaseSync,
+  day: string,
+  patch: {
+    entries?: number;
+    copy_entries?: number;
+    tp?: number;
+    sl?: number;
+    near_certain?: number;
+    settled?: number;
+    closed_other?: number;
+    pnl?: number;
+  },
+): void {
+  db.prepare("INSERT OR IGNORE INTO daily_stats (day) VALUES (?)").run(day);
+  const pnl = patch.pnl ?? 0;
+  const win = pnl > 0;
+  db.prepare(
+    `UPDATE daily_stats SET
+       entries = entries + ?,
+       copy_entries = copy_entries + ?,
+       tp = tp + ?,
+       sl = sl + ?,
+       near_certain = near_certain + ?,
+       settled = settled + ?,
+       closed_other = closed_other + ?,
+       pnl = pnl + ?,
+       wins = wins + ?,
+       losses = losses + ?,
+       win_usd = win_usd + ?,
+       loss_usd = loss_usd + ?
+     WHERE day = ?`,
+  ).run(
+    patch.entries ?? 0,
+    patch.copy_entries ?? 0,
+    patch.tp ?? 0,
+    patch.sl ?? 0,
+    patch.near_certain ?? 0,
+    patch.settled ?? 0,
+    patch.closed_other ?? 0,
+    pnl,
+    win ? 1 : 0,
+    win ? 0 : 1,
+    win ? pnl : 0,
+    win ? 0 : pnl,
+    day,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Price history
 // ---------------------------------------------------------------------------
 
@@ -578,4 +713,31 @@ export function upsertPriceHistory(
       "INSERT INTO price_history (market_id, token_id, points, fetched_at) VALUES (?, ?, ?, ?)",
     ).run(marketId, tokenId, JSON.stringify(points), Date.now());
   }
+}
+
+// ---------------------------------------------------------------------------
+// Market math helpers (moved here so notify/daily/copy can use them without
+// importing the engine — keeps the module graph acyclic)
+// ---------------------------------------------------------------------------
+
+// Mid of the YES token. Works with a two-sided book, a one-sided book (the
+// visible side is the best estimate of where it trades), or falls back to the
+// last Gamma outcome price. One-sided books are exactly what you get when a
+// market is basically resolved — the exit logic must still see ~100¢.
+export function marketMid(market: Market): number {
+  const book = market.book;
+  if (book && (book.bids.length > 0 || book.asks.length > 0)) {
+    const bestBid = book.bids[0]?.price;
+    const bestAsk = book.asks[0]?.price;
+    if (bestBid !== undefined && bestAsk !== undefined) {
+      return (bestBid + bestAsk) / 2;
+    }
+    if (bestAsk !== undefined) return bestAsk;
+    if (bestBid !== undefined) return bestBid;
+  }
+  return market.outcomePrices[0] ?? 0.5;
+}
+
+export function clampPrice(value: number): number {
+  return Math.min(0.98, Math.max(0.02, value));
 }

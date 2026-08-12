@@ -97,6 +97,10 @@ try {
 
   r = await json("/api/meta", { cookie });
   check("meta reports dry + 5s scan", r.data?.mode === "dry" && r.data?.scanIntervalMs === 5000);
+  check(
+    "meta shows telegram + copy trade off by default",
+    r.data?.telegramConfigured === false && r.data?.copyTradeEnabled === false,
+  );
 
   r = await json("/api/bot/enable", { method: "POST", body: { enabled: true }, cookie });
   check("arm bot (200)", r.status === 200);

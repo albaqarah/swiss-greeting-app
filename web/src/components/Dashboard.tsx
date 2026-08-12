@@ -162,7 +162,7 @@ export function Dashboard({
           <div className="flex items-center justify-end gap-2 border-b border-black px-3 py-3 sm:justify-center sm:border-b-0 sm:border-r">
             <span className="text-black/50">Control room</span>
           </div>
-          <div className="hidden items-center justify-center border-r border-black px-3 py-3 sm:flex">
+          <div className="hidden flex-col items-center justify-center gap-1 border-r border-black px-3 py-3 sm:flex">
             <span
               className={cn(
                 "inline-flex items-center gap-1.5",
@@ -173,6 +173,12 @@ export function Dashboard({
                 className={cn("size-1.5", live ? "bg-swiss-red" : "bg-swiss-blue")}
               />
               {live ? "Live · real money" : "Dry run · paper"}
+            </span>
+            <span className="text-black/50">
+              TG {meta.data?.telegramConfigured ? "on" : "off"} · Copy{" "}
+              {meta.data?.copyTradeWallet
+                ? `${meta.data.copyTradeWallet.slice(0, 6)}…${meta.data.copyTradeWallet.slice(-4)}`
+                : "off"}
             </span>
           </div>
           <div className="col-span-2 flex items-center justify-end gap-3 border-b border-black px-3 py-3 sm:col-span-1 sm:border-b-0">

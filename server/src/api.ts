@@ -17,6 +17,9 @@ import {
   updateConfig,
 } from "./db.js";
 import { getMarketHistory, marketMid, refreshMarketData } from "./engine.js";
+import { bumpDaily } from "./daily.js";
+import { escapeHtml, notify, telegramConfigured } from "./notify.js";
+import { truncate } from "./polymarket.js";
 import {
   clearSessionCookie,
   isAuthenticated,
@@ -272,6 +275,10 @@ function closeAllPositions(db: DatabaseSync): number {
       `Flat now: closed ${p.side} ${Math.round(p.shares)} @ ${(valuePrice * 100).toFixed(1)}¢ (${pnl >= 0 ? "+" : ""}${(((valuePrice - p.avgPrice) / p.avgPrice) * 100).toFixed(1)}%).`,
       p.marketId,
     );
+    bumpDaily(db, { closed_other: 1, pnl });
+    notify(
+      `✋ <b>MANUAL CLOSE</b>\n<b>${p.side}</b> ${Math.round(p.shares)} shares @ ${(valuePrice * 100).toFixed(1)}¢\n${escapeHtml(truncate(market.question, 120))}\n${pnl >= 0 ? "💚 +" : "🔻 "}$${Math.abs(pnl).toFixed(2)}`,
+    );
     closed += 1;
   }
 
@@ -310,6 +317,7 @@ function resetAccount(db: DatabaseSync): void {
 
   db.prepare("DELETE FROM trades").run();
   db.prepare("DELETE FROM bot_logs").run();
+  db.prepare("DELETE FROM daily_stats").run();
 
   insertLog(
     db,
@@ -342,6 +350,15 @@ export async function handleApiRequest(
         mode: config.botMode,
         scanIntervalMs: config.scanIntervalMs,
         version: VERSION,
+        telegramConfigured: telegramConfigured(),
+        copyTradeWallet: config.copyTradeWallet,
+        copyTradeEnabled: !!config.copyTradeWallet,
+        copyMaxOpen: config.copyMaxOpen,
+        copyMaxOrderUsd: config.copyMaxOrderUsd,
+        copyMinTradeUsd: config.copyMinTradeUsd,
+        copyScanIntervalMs: config.copyScanIntervalMs,
+        reportTimezone: config.reportTimezone,
+        reportHour: config.reportHour,
       });
       return true;
     }

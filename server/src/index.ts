@@ -10,6 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadConfig, type Config } from "./config.js";
 import { openStore } from "./db.js";
+import { initDaily, maybeDailyReport } from "./daily.js";
+import { initTelegram, telegramConfigured } from "./notify.js";
 import { handleApiRequest } from "./api.js";
 import { runBotTick } from "./runner.js";
 
@@ -120,6 +122,8 @@ function serveStatic(config: Config, res: ServerResponse, pathname: string): voi
 
 function start(): void {
   const config = loadConfig();
+  initTelegram(config);
+  initDaily(config);
   const db = openStore(config.dataDir);
 
   if (config.adminPin === "change-me" || config.adminPin === "change-me-please") {
@@ -133,6 +137,12 @@ function start(): void {
   console.log(`  scan:      every ${config.scanIntervalMs / 1000}s`);
   console.log(`  db:        ${path.join(config.dataDir, "genius.db")}`);
   console.log(`  listen:    http://${config.host}:${config.port}`);
+  console.log(
+    `  telegram:  ${telegramConfigured() ? "connected ✓" : "off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)"}`,
+  );
+  console.log(
+    `  copy:      ${config.copyTradeWallet ? `watching ${config.copyTradeWallet.slice(0, 6)}…${config.copyTradeWallet.slice(-4)}` : "off (set COPY_TRADE_WALLET)"}`,
+  );
   console.log("────────────────────────────────────────────");
 
   const server = createServer(async (req, res) => {
@@ -174,9 +184,11 @@ function start(): void {
       tickCount += 1;
       if (tickCount % 60 === 0) {
         console.log(
-          `[tick #${tickCount}] fetched=${result.fetched} books=${result.books} ran=${result.ran}${result.reason ? ` (${result.reason})` : ""}`,
+          `[tick #${tickCount}] fetched=${result.fetched} books=${result.books} ran=${result.ran} copy=${result.copyCopied}${result.reason ? ` (${result.reason})` : ""}`,
         );
       }
+      // 7 AM daily P&L report + morning briefing (fires when due, no-op otherwise).
+      await maybeDailyReport(db);
     } catch (error) {
       console.error("bot loop error:", error);
     }
