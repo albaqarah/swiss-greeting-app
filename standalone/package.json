@@ -1,0 +1,19 @@
+{
+  "name": "genius-bot-standalone",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Polymarket esports bot — standalone VPS edition (no Convex). Bot + UI run via pm2.",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w web",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "start": "node server/dist/index.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
